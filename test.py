@@ -1,33 +1,59 @@
-import tensorflow as tf
+import cv2
+import time
 import numpy as np
+from datetime import datetime
 
-# Create 100 phony x, y data points in NumPy, y = x * 0.1 + 0.3
-x_data = np.random.rand(100).astype(np.float32)
-y_data = x_data * 0.1 + 0.3
+camera_port = 0
+ 
+ramp_frames = 10
 
-# Try to find values for W and b that compute y_data = W * x_data + b
-# (We know that W should be 0.1 and b 0.3, but TensorFlow will
-# figure that out for us.)
-W = tf.Variable(tf.random_uniform([1], -1.0, 1.0))
-b = tf.Variable(tf.zeros([1]))
-y = W * x_data + b
+camera = cv2.VideoCapture(0)
 
-# Minimize the mean squared errors.
-loss = tf.reduce_mean(tf.square(y - y_data))
-optimizer = tf.train.GradientDescentOptimizer(0.5)
-train = optimizer.minimize(loss)
+fgbg = cv2.BackgroundSubtractorMOG()
 
-# Before starting, initialize the variables.  We will 'run' this first.
-init = tf.global_variables_initializer()
+camera.set(3,1000)
+camera.set(4,1000)
+ 
+def get_image():
+	retval, im = camera.read()
+	gray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+	return gray
 
-# Launch the graph.
-sess = tf.Session()
-sess.run(init)
+def mse(a, b):
+	err = np.sum((a.astype("float") - b.astype("float")) ** 2)
+	err /= float(a.shape[0] * a.shape[1])
+	return err
 
-# Fit the line.
-for step in range(201):
-    sess.run(train)
-    if step % 20 == 0:
-        print(step, sess.run(W), sess.run(b))
+previous_image = get_image()
 
-# Learns best fit is W: [0.1], b: [0.3]
+while True:
+	try:
+		'''
+		for i in xrange(ramp_frames):
+			temp = get_image()'''
+
+		camera_capture = get_image()
+		mse_ = mse(camera_capture, previous_image)
+		if mse_ > 50:
+			print("Movement with ", mse_, " MSE")
+			subtraction = camera_capture - previous_image
+			fgmask = fgbg.apply(camera_capture)
+			file = "/mnt/cifs/"+datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')+".jpg"
+			file_s = "/mnt/cifs/"+datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')+"_s.jpg"
+			file_f = "/mnt/cifs/"+datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')+"_f.jpg"
+			cv2.imwrite(file, camera_capture)
+			cv2.imwrite(file_s, subtraction)
+			cv2.imwrite(file_f, fgmask)
+			print("Captured ", file)
+		else:
+			print(mse_)
+
+		previous_image = camera_capture
+		#time.sleep(1)
+
+	except KeyboardInterrupt: 
+		print("Stopping...")
+		del(camera)
+		break
+
+
